@@ -1,4 +1,4 @@
-x-logging:
+x-logging: &default-logging
   driver: "json-file"
   options:
     max-size: "10m"
@@ -32,6 +32,7 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+    logging: *default-logging
 
   api:
     build:
@@ -45,7 +46,7 @@ services:
       redis: {condition: service_healthy}
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      - DATA_DIR =/data
+      - DATA_DIR=/data
     volumes: [assets:/data]
     develop:
       watch:
@@ -71,7 +72,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - REDIS_URL=redis://${REDIS_HOST}:${REDIS_PORT}/0
-      - DATA_DIR =/data
+      - DATA_DIR=/data
     volumes: [assets:/data]
     deploy:
       replicas: 2
@@ -85,7 +86,8 @@ services:
       - action: rebuild
         path: ./uv.lock
     logging: *default-logging
-  volumes:
-    db-data:
-    redis-data:
-    assets:
+
+volumes:
+  db-data:
+  redis-data:
+  assets:

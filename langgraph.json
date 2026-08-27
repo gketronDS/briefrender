@@ -1,0 +1,7 @@
+{
+  "dependencies": ["langchain-anthropic", "./briefrender"],
+  "graphs": {
+    "my_agent": "./briefrender/agent.py:agent"
+  },
+  "env": "./.env"
+}
