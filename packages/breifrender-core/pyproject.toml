@@ -1,0 +1,16 @@
+# /packages/loom-core/pyproject.toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "briefrender-core"
+version = "0.1.0"
+description = "Core domain types and state logic for BriefRender for Agents"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/briefrender"]
