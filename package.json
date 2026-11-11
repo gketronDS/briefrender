@@ -1,0 +1,11 @@
+{
+  "name": "briefrender-demo",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "demo:sample": "node apps/web/demo/make-sample.mjs",
+    "demo:scene": "node apps/web/demo/server.mjs",
+    "test:demo": "node --test apps/web/demo/server.test.mjs"
+  }
+}
