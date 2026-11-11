@@ -2,18 +2,21 @@
 // It is not the production stack; it only serves the page, the fixture and one local sample file.
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { FixtureRole, Observation, ObservationPacket, SettingsResponse } from './contracts.ts';
 
-const here = (p) => fileURLToPath(new URL(p, import.meta.url));
-const ROUTES = {
+type Route = [file: string, type: string];
+const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
+const ROUTES: Record<string, Route> = {
   '/scene': [here('./scene.html'), 'text/html; charset=utf-8'],
   '/scene/example.json': [here('./fixtures/example-scene.json'), 'application/json'],
   '/app': [here('./app.html'), 'text/html; charset=utf-8'],
 };
 
-async function send(req, res, file, type) {
+async function send(req: IncomingMessage, res: ServerResponse, file: string, type: string) {
   const info = await stat(file).catch(() => null);
   if (!info?.isFile()) return void res.writeHead(404, { 'content-type': 'text/plain' }).end('Not found');
   const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '');
@@ -36,23 +39,27 @@ async function send(req, res, file, type) {
 // The server, not the page, enforces the role and records each attempt. Observations map to the
 // FAC-65 R04 ProbeResult shape: a returned response is "observed"; an app error is "failed".
 const APP = 'controlled-settings-app@1';
-const json = (res, status, body) =>
+const json = (res: ServerResponse, status: number, body: unknown) =>
   res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
 
-export function startDemoServer({ port = 4173, mediaDir = here('./media/'), fault = process.env.DEMO_FAULT } = {}) {
-  const routes = { ...ROUTES, '/media/example.mp4': [join(mediaDir, 'example.mp4'), 'video/mp4'] };
-  let run = null;
+export interface DemoServerOptions { port?: number; mediaDir?: string; fault?: string | null }
+
+export function startDemoServer(
+  { port = 4173, mediaDir = here('./media/'), fault = process.env.DEMO_FAULT }: DemoServerOptions = {},
+): Promise<Server> {
+  const routes: Record<string, Route> = { ...ROUTES, '/media/example.mp4': [join(mediaDir, 'example.mp4'), 'video/mp4'] };
+  let run: { id: string; role: FixtureRole; observations: Observation[] } | null = null;
   let runCount = 0;
-  const api = {
+  const api: Record<string, (url: URL, res: ServerResponse) => void> = {
     'POST /app/reset': (url, res) => {
       const role = url.searchParams.get('role');
-      if (!['viewer', 'editor'].includes(role)) return json(res, 400, { error: 'role must be viewer or editor' });
+      if (role !== 'viewer' && role !== 'editor') return json(res, 400, { error: 'role must be viewer or editor' });
       run = { id: `run-${++runCount}`, role, observations: [] };
       json(res, 200, { run: { id: run.id, role } });
     },
     'GET /app/settings': (url, res) => {
       if (!run) return json(res, 409, { error: 'No run. Reset with a role first.' });
-      const obs = {
+      const obs: Observation = {
         probeId: `${run.id}/obs-${run.observations.length + 1}`, runId: run.id, at: new Date().toISOString(),
         environment: { app: APP, actorRole: run.role }, action: 'open_workspace_settings',
       };
@@ -61,18 +68,20 @@ export function startDemoServer({ port = 4173, mediaDir = here('./media/'), faul
         obs.outcome = { kind: 'failed', reason: 'tool_error' };
         return json(res, 500, { error: 'Injected settings failure' });
       }
-      const body = run.role === 'editor'
+      const body: SettingsResponse = run.role === 'editor'
         ? { allowed: true, control: 'Workspace name can be edited.' }
         : { allowed: false, reason: 'Viewers cannot open workspace settings.' };
       const status = body.allowed ? 200 : 403;
       obs.outcome = { kind: 'observed', response: { status, body } };
       json(res, status, body);
     },
-    'GET /scene/observations': (url, res) =>
-      json(res, 200, { run: run && { id: run.id, role: run.role }, observations: run?.observations ?? [] }),
+    'GET /scene/observations': (url, res) => {
+      const packet: ObservationPacket = { run: run && { id: run.id, role: run.role }, observations: run?.observations ?? [] };
+      json(res, 200, packet);
+    },
   };
   const server = createServer((req, res) => {
-    const url = new URL(req.url, 'http://localhost');
+    const url = new URL(req.url ?? '/', 'http://localhost');
     const handler = api[`${req.method} ${url.pathname}`];
     if (handler) return handler(url, res);
     const route = routes[url.pathname];
@@ -84,5 +93,5 @@ export function startDemoServer({ port = 4173, mediaDir = here('./media/'), faul
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const server = await startDemoServer();
-  console.log(`Example scene: http://localhost:${server.address().port}/scene`);
+  console.log(`Example scene: http://localhost:${(server.address() as AddressInfo).port}/scene`);
 }
