@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Controlled test app · Briefrender</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+    .tag { background: #e0e7ff; color: #1e1b4b; padding: .1rem .5rem; border-radius: .25rem; font-weight: 600; }
+    [data-state="denied"], [data-state="error"] { color: #b91c1c; font-weight: 600; }
+    [data-state="allowed"] { color: #15803d; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>Workspace settings <span class="tag">Controlled test app</span></h1>
+  <p>Synthetic app with seeded roles. These roles belong to this test app, not to Briefrender accounts.</p>
+  <label>Role <select id="role"><option value="viewer">Viewer</option><option value="editor">Editor</option></select></label>
+  <button id="reset" type="button">Reset run with this role</button>
+  <p id="run" role="status">Checking for a run…</p>
+  <button id="open" type="button" disabled>Open workspace settings</button>
+  <p id="result" role="status" aria-live="polite"></p>
+  <p><a href="/scene">Back to scene</a></p>
+  <script type="module">
+    const $ = (id) => document.getElementById(id);
+    const show = (run) => {
+      $('run').textContent = run ? `Run ${run.id} as ${run.role}.` : 'No run yet. Choose a role and reset.';
+      $('open').disabled = !run;
+    };
+    show((await (await fetch('/scene/observations')).json()).run);
+
+    $('reset').addEventListener('click', async () => {
+      const res = await fetch(`/app/reset?role=${$('role').value}`, { method: 'POST' });
+      show((await res.json()).run);
+      Object.assign($('result'), { textContent: '' }).dataset.state = '';
+    });
+    $('open').addEventListener('click', async () => {
+      const res = await fetch('/app/settings');
+      const body = await res.json().catch(() => ({}));
+      const [state, text] = res.ok ? ['allowed', `Allowed: ${body.control}`]
+        : res.status === 403 ? ['denied', `Denied: ${body.reason}`]
+        : ['error', `The app failed (HTTP ${res.status}). No result was observed.`];
+      Object.assign($('result'), { textContent: text }).dataset.state = state;
+    });
+  </script>
+</body>
+</html>

@@ -31,9 +31,23 @@
       <dt>Source evidence</dt><dd id="evidence"></dd>
     </dl>
   </main>
+  <section aria-labelledby="source-heading">
+    <h2 id="source-heading">Observed source behavior</h2>
+    <p><a href="/app">Try source behavior</a> in the controlled test app, then return here.
+      These are recorded by the server for the current run. The example scene above does not use them yet.</p>
+    <ul id="observations"><li>Loading…</li></ul>
+  </section>
   <script type="module">
     const $ = (id) => document.getElementById(id);
     const setStatus = (state, text) => Object.assign($('status'), { textContent: text }).dataset.state = state;
+    const describe = (o) => `${o.probeId} · ${o.environment.actorRole} → ${o.action} → ` + (o.outcome.kind === 'observed'
+      ? `observed HTTP ${o.outcome.response.status}: ${o.outcome.response.body.allowed ? 'allowed' : 'denied'}`
+      : `${o.outcome.kind} (${o.outcome.reason}), no result observed`);
+    const packet = await fetch('/scene/observations').then((r) => r.json()).catch(() => null);
+    $('observations').replaceChildren(...(!packet ? ['Could not load observations.']
+      : packet.observations.length ? packet.observations.map(describe)
+      : [packet.run ? `Run ${packet.run.id} (${packet.run.role}): no attempts yet.` : 'No observations yet.']
+    ).map((text) => Object.assign(document.createElement('li'), { textContent: text })));
     const player = $('player');
     player.addEventListener('canplay', () => setStatus('ready', 'Ready: playing the example clip.'));
     player.addEventListener('error', () => setStatus('error',
