@@ -8,3 +8,5 @@ redis-data/
 .pytest_cache/
 .ruff_cache/
 .ty_cache/
+node_modules/
+apps/web/demo/media/

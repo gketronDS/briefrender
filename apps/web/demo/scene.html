@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Example scene · Briefrender</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
+    main { display: grid; grid-template-columns: 3fr 2fr; gap: 1.5rem; align-items: start; }
+    video { width: 100%; background: #111; aspect-ratio: 16 / 9; }
+    .tag { background: #fde68a; color: #422006; padding: .1rem .5rem; border-radius: .25rem; font-weight: 600; }
+    [data-state="error"] { color: #b91c1c; font-weight: 600; }
+    dt { font-weight: 600; margin-top: .75rem; }
+    dd { margin: 0; }
+  </style>
+</head>
+<body>
+  <h1>Scene preview <span class="tag">Example</span></h1>
+  <p>Sample content only: nothing on this page was generated from your material.</p>
+  <button id="preview" type="button">Preview example</button>
+  <p id="status" role="status" aria-live="polite" data-state="idle">Nothing loaded.</p>
+  <main hidden>
+    <figure>
+      <video id="player" controls playsinline preload="none" aria-describedby="label"></video>
+      <figcaption id="label"></figcaption>
+    </figure>
+    <dl>
+      <dt>Sample goal</dt><dd id="goal"></dd>
+      <dt>Proposed demonstration (sample)</dt><dd id="proposal"></dd>
+      <dt>Narration (sample)</dt><dd id="narration"></dd>
+      <dt>Source evidence</dt><dd id="evidence"></dd>
+    </dl>
+  </main>
+  <script type="module">
+    const $ = (id) => document.getElementById(id);
+    const setStatus = (state, text) => Object.assign($('status'), { textContent: text }).dataset.state = state;
+    const player = $('player');
+    player.addEventListener('canplay', () => setStatus('ready', 'Ready: playing the example clip.'));
+    player.addEventListener('error', () => setStatus('error',
+      'Unavailable: the example clip could not be loaded. Run "npm run demo:sample" and try again.'));
+
+    $('preview').addEventListener('click', async () => {
+      setStatus('loading', 'Loading example…');
+      try {
+        const res = await fetch('/scene/example.json');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const scene = await res.json();
+        $('label').textContent = `${scene.label}. ${scene.renderedArtifact.note}`;
+        $('goal').textContent = scene.goal;
+        $('proposal').textContent = scene.demonstrationProposal;
+        $('narration').textContent = scene.narrationIntent;
+        $('evidence').textContent = `${scene.sourceEvidence.status}: ${scene.sourceEvidence.note}`;
+        document.querySelector('main').hidden = false;
+        player.src = scene.selectedMedia.src;
+        player.play().catch(() => {});
+      } catch (err) {
+        setStatus('error', `Unavailable: the example scene could not be loaded (${err.message}).`);
+      }
+    });
+  </script>
+</body>
+</html>
