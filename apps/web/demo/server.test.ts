@@ -3,11 +3,12 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { startDemoServer } from './server.mjs';
+import { type DemoServerOptions, startDemoServer } from './server.ts';
+import type { AddressInfo } from 'node:net';
 
-async function withServer(mediaDir, fn, opts = {}) {
+async function withServer(mediaDir: string, fn: (base: string) => Promise<void>, opts: DemoServerOptions = {}) {
   const server = await startDemoServer({ port: 0, mediaDir, fault: null, ...opts });
-  const base = `http://127.0.0.1:${server.address().port}`;
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   try { await fn(base); } finally { server.close(); }
 }
 
@@ -40,14 +41,14 @@ test('missing sample media is a 404, and only declared files are reachable', asy
     const res = await fetch(`${base}/media/example.mp4`);
     assert.equal(res.status, 404);
     assert.notEqual(res.headers.get('content-type'), 'video/mp4');
-    assert.equal((await fetch(`${base}/media/..%2Fserver.mjs`)).status, 404);
+    assert.equal((await fetch(`${base}/media/..%2Fserver.ts`)).status, 404);
     assert.equal((await fetch(`${base}/nope`)).status, 404);
   });
 });
 
 const tmp = () => mkdtemp(join(tmpdir(), 'scene-'));
-const reset = (base, role) => fetch(`${base}/app/reset?role=${role}`, { method: 'POST' });
-const observed = async (base) => (await fetch(`${base}/scene/observations`)).json();
+const reset = (base: string, role: string) => fetch(`${base}/app/reset?role=${role}`, { method: 'POST' });
+const observed = async (base: string) => (await fetch(`${base}/scene/observations`)).json();
 
 test('a direct viewer request is denied by the server and recorded for that run', async () => {
   await withServer(await tmp(), async (base) => {

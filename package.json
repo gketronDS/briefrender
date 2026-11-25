@@ -2,10 +2,17 @@
   "name": "briefrender-demo",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
-    "demo:sample": "node apps/web/demo/make-sample.mjs",
-    "demo:scene": "node apps/web/demo/server.mjs",
-    "test:demo": "node --test apps/web/demo/server.test.mjs"
+    "demo:sample": "node apps/web/demo/make-sample.ts",
+    "demo:scene": "node apps/web/demo/server.ts",
+    "test:demo": "node --test apps/web/demo/server.test.ts",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3"
   }
 }
