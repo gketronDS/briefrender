@@ -36,6 +36,12 @@
     <p><a href="/app">Try source behavior</a> in the controlled test app, then return here.
       These are recorded by the server for the current run. The example scene above does not use them yet.</p>
     <ul id="observations"><li>Loading…</li></ul>
+    <h3>Selected attempts</h3>
+    <p>Keep one attempt per role across resets. Selecting another for that role replaces it.
+      Restarting the demo server clears the selection.</p>
+    <ul id="selected" aria-live="polite"><li>Loading…</li></ul>
+    <p id="selection-error" role="alert"></p>
+    <a href="/scene/selected-observations">Inspect full selected records (JSON)</a>
   </section>
   <script type="module">
     const $ = (id) => document.getElementById(id);
@@ -43,11 +49,50 @@
     const describe = (o) => `${o.probeId} · ${o.environment.actorRole} → ${o.action} → ` + (o.outcome.kind === 'observed'
       ? `observed HTTP ${o.outcome.response.status}: ${o.outcome.response.body.allowed ? 'allowed' : 'denied'}`
       : `${o.outcome.kind} (${o.outcome.reason}), no result observed`);
+    const listItem = (text) => Object.assign(document.createElement('li'), { textContent: text });
+    function showSelection(observations) {
+      const rows = observations.map((o) => listItem(describe(o)));
+      $('selected').replaceChildren(...(rows.length ? rows : [listItem('No attempts selected.')]));
+    }
+
+    async function selectAttempt(observation) {
+      const query = new URLSearchParams({ probeId: observation.probeId, at: observation.at });
+      const buttons = $('observations').querySelectorAll('button');
+      buttons.forEach((button) => { button.disabled = true; });
+      $('selection-error').textContent = '';
+      try {
+        const response = await fetch(`/scene/selected-observations?${query}`, { method: 'POST' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        showSelection(result);
+      } catch (error) {
+        $('selection-error').textContent = `Could not confirm selection. ${error.message}`;
+      } finally {
+        buttons.forEach((button) => { button.disabled = false; });
+      }
+    }
+
+    try {
+      const response = await fetch('/scene/selected-observations');
+      if (!response.ok) throw new Error();
+      showSelection(await response.json());
+    } catch {
+      $('selected').replaceChildren(listItem('Could not load selected attempts.'));
+    }
     const packet = await fetch('/scene/observations').then((r) => r.json()).catch(() => null);
-    $('observations').replaceChildren(...(!packet ? ['Could not load observations.']
-      : packet.observations.length ? packet.observations.map(describe)
-      : [packet.run ? `Run ${packet.run.id} (${packet.run.role}): no attempts yet.` : 'No observations yet.']
-    ).map((text) => Object.assign(document.createElement('li'), { textContent: text })));
+    if (packet?.observations.length) {
+      $('observations').replaceChildren(...packet.observations.map((o) => {
+        const row = listItem(describe(o));
+        const button = document.createElement('button');
+        button.textContent = 'Keep attempt';
+        button.onclick = () => selectAttempt(o);
+        row.append(' ', button);
+        return row;
+      }));
+    } else {
+      const empty = packet?.run ? `Run ${packet.run.id} (${packet.run.role}): no attempts yet.` : 'No observations yet.';
+      $('observations').replaceChildren(listItem(packet ? empty : 'Could not load observations.'));
+    }
     const player = $('player');
     player.addEventListener('canplay', () => setStatus('ready', 'Ready: playing the example clip.'));
     player.addEventListener('error', () => setStatus('error',

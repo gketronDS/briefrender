@@ -98,3 +98,46 @@ test('observations cannot be posted, and nothing is recorded without a run', asy
     assert.deepEqual(await observed(base), { run: null, observations: [] });
   });
 });
+
+const selected = async (base: string) => (await fetch(`${base}/scene/selected-observations`)).json();
+function selectProbe(base: string, probe: { probeId: string; at: string }) {
+  const query = new URLSearchParams({ probeId: probe.probeId, at: probe.at });
+  return fetch(`${base}/scene/selected-observations?${query}`, { method: 'POST' });
+}
+
+test('selection keeps the original attempts across reset and replaces only the chosen role', async () => {
+  await withServer(await tmp(), async (base) => {
+    await reset(base, 'viewer');
+    await fetch(`${base}/app/settings`);
+    const [viewer] = (await observed(base)).observations;
+    assert.deepEqual(await selected(base), []);
+    assert.equal((await selectProbe(base, viewer)).status, 200);
+    await selectProbe(base, viewer);
+    await reset(base, 'editor');
+    assert.deepEqual((await observed(base)).observations, []);
+    assert.deepEqual(await selected(base), [viewer]);
+    assert.equal((await selectProbe(base, viewer)).status, 409);
+    await fetch(`${base}/app/settings`);
+    await fetch(`${base}/app/settings`);
+    const [first, second] = (await observed(base)).observations;
+    assert.equal((await selectProbe(base, { ...first, at: 'stale' })).status, 409);
+    assert.equal((await selectProbe(base, { ...first, probeId: 'fabricated' })).status, 409);
+    assert.deepEqual(await selected(base), [viewer]);
+    await selectProbe(base, first);
+    assert.deepEqual(await selected(base), [viewer, first]);
+    await selectProbe(base, second);
+    assert.deepEqual(await selected(base), [viewer, second]);
+  });
+});
+
+test('selecting a failed attempt preserves its failure through reset', async () => {
+  await withServer(await tmp(), async (base) => {
+    await reset(base, 'viewer');
+    await fetch(`${base}/app/settings`);
+    const [failed] = (await observed(base)).observations;
+    await selectProbe(base, failed);
+    await reset(base, 'editor');
+    assert.deepEqual(failed.outcome, { kind: 'failed', reason: 'tool_error' });
+    assert.deepEqual(await selected(base), [failed]);
+  }, { fault: 'settings' });
+});
