@@ -3,7 +3,7 @@ name: Check dev Anthropic access
 on:
   workflow_dispatch:
   push:
-    branches: [codex/check-anthropic-dev]
+    branches: [main, codex/check-anthropic-dev]
     paths: [.github/workflows/check-anthropic-dev.yml]
 
 permissions: {}
@@ -32,8 +32,12 @@ jobs:
           model = "claude-opus-5-5"
           client = http.client.HTTPSConnection("api.anthropic.com", timeout=20)
           headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
-          client.request("GET", f"/v1/models/{model}", headers=headers)
-          response = client.getresponse()
+          try:
+              client.request("GET", f"/v1/models/{model}", headers=headers)
+              response = client.getresponse()
+          except (ValueError, OSError, http.client.HTTPException):
+              # A malformed header exception can contain its value.
+              sys.exit("Could not send an authenticated request to Anthropic.")
           if response.status != 200:
               sys.exit(f"Anthropic model lookup returned HTTP {response.status}.")
 
