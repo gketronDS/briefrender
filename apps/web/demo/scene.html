@@ -36,18 +36,105 @@
     <p><a href="/app">Try source behavior</a> in the controlled test app, then return here.
       These are recorded by the server for the current run. The example scene above does not use them yet.</p>
     <ul id="observations"><li>Loading…</li></ul>
+    <h3>Selected attempts</h3>
+    <p>Keep one attempt per role across resets. Selecting another for that role replaces it.
+      Restarting the demo server clears the selection.</p>
+    <ul id="selected" aria-live="polite"><li>Loading…</li></ul>
+    <p id="selection-error" role="alert"></p>
+    <a href="/scene/selected-observations">Inspect full selected records (JSON)</a>
   </section>
   <script type="module">
     const $ = (id) => document.getElementById(id);
     const setStatus = (state, text) => Object.assign($('status'), { textContent: text }).dataset.state = state;
-    const describe = (o) => `${o.probeId} · ${o.environment.actorRole} → ${o.action} → ` + (o.outcome.kind === 'observed'
-      ? `observed HTTP ${o.outcome.response.status}: ${o.outcome.response.body.allowed ? 'allowed' : 'denied'}`
-      : `${o.outcome.kind} (${o.outcome.reason}), no result observed`);
-    const packet = await fetch('/scene/observations').then((r) => r.json()).catch(() => null);
-    $('observations').replaceChildren(...(!packet ? ['Could not load observations.']
-      : packet.observations.length ? packet.observations.map(describe)
-      : [packet.run ? `Run ${packet.run.id} (${packet.run.role}): no attempts yet.` : 'No observations yet.']
-    ).map((text) => Object.assign(document.createElement('li'), { textContent: text })));
+    function describeAttempt(observation) {
+      const { probeId, environment, action, outcome } = observation;
+      const attempt = `${probeId} · ${environment.actorRole} → ${action}`;
+      if (outcome.kind === 'observed') {
+        const { status, body } = outcome.response;
+        const permission = body.allowed ? 'allowed' : 'denied';
+        return `${attempt} → observed HTTP ${status}: ${permission}`;
+      }
+      return `${attempt} → ${outcome.kind} (${outcome.reason}), no result observed`;
+    }
+
+    function createListItem(text) {
+      const item = document.createElement('li');
+      item.textContent = text;
+      return item;
+    }
+
+    function showSelection(observations) {
+      const rows = observations.map((observation) => createListItem(describeAttempt(observation)));
+      if (rows.length === 0) {
+        rows.push(createListItem('No attempts selected.'));
+      }
+      $('selected').replaceChildren(...rows);
+    }
+
+    async function selectAttempt(observation) {
+      const query = new URLSearchParams({ probeId: observation.probeId, at: observation.at });
+      // Wait for the server to confirm one selection before allowing another.
+      const buttons = $('observations').querySelectorAll('button');
+      buttons.forEach((button) => { button.disabled = true; });
+      $('selection-error').textContent = '';
+      try {
+        const response = await fetch(`/scene/selected-observations?${query}`, { method: 'POST' });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error);
+        }
+        showSelection(result);
+      } catch (error) {
+        $('selection-error').textContent = `Could not confirm selection. ${error.message}`;
+      } finally {
+        buttons.forEach((button) => { button.disabled = false; });
+      }
+    }
+
+    function createAttemptRow(observation) {
+      const row = createListItem(describeAttempt(observation));
+      const button = document.createElement('button');
+      button.textContent = 'Keep attempt';
+      button.onclick = () => selectAttempt(observation);
+      row.append(' ', button);
+      return row;
+    }
+
+    async function loadSelection() {
+      try {
+        const response = await fetch('/scene/selected-observations');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const observations = await response.json();
+        showSelection(observations);
+      } catch {
+        $('selected').replaceChildren(createListItem('Could not load selected attempts.'));
+      }
+    }
+
+    async function loadCurrentAttempts() {
+      const list = $('observations');
+      let packet;
+      try {
+        const response = await fetch('/scene/observations');
+        packet = await response.json();
+      } catch {
+        packet = null;
+      }
+      if (!packet) {
+        list.replaceChildren(createListItem('Could not load observations.'));
+      } else if (packet.observations.length > 0) {
+        const rows = packet.observations.map(createAttemptRow);
+        list.replaceChildren(...rows);
+      } else if (packet.run) {
+        const { id, role } = packet.run;
+        list.replaceChildren(createListItem(`Run ${id} (${role}): no attempts yet.`));
+      } else {
+        list.replaceChildren(createListItem('No observations yet.'));
+      }
+    }
+
+    await loadSelection();
+    await loadCurrentAttempts();
     const player = $('player');
     player.addEventListener('canplay', () => setStatus('ready', 'Ready: playing the example clip.'));
     player.addEventListener('error', () => setStatus('error',

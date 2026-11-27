@@ -98,3 +98,62 @@ test('observations cannot be posted, and nothing is recorded without a run', asy
     assert.deepEqual(await observed(base), { run: null, observations: [] });
   });
 });
+
+async function readSelectedAttempts(base: string) {
+  const response = await fetch(`${base}/scene/selected-observations`);
+  return response.json();
+}
+
+function selectProbe(base: string, probe: { probeId: string; at: string }) {
+  const query = new URLSearchParams({ probeId: probe.probeId, at: probe.at });
+  return fetch(`${base}/scene/selected-observations?${query}`, { method: 'POST' });
+}
+
+test('selection keeps the original attempts across reset and replaces only the chosen role', async () => {
+  await withServer(await tmp(), async (base) => {
+    await reset(base, 'viewer');
+    await fetch(`${base}/app/settings`);
+    const viewerRun = await observed(base);
+    const [viewerAttempt] = viewerRun.observations;
+    assert.deepEqual(await readSelectedAttempts(base), []);
+    const keepViewer = await selectProbe(base, viewerAttempt);
+    assert.equal(keepViewer.status, 200);
+    // A second click keeps the same record only once.
+    await selectProbe(base, viewerAttempt);
+
+    await reset(base, 'editor');
+    const emptyEditorRun = await observed(base);
+    assert.deepEqual(emptyEditorRun.observations, []);
+    assert.deepEqual(await readSelectedAttempts(base), [viewerAttempt]);
+    const previousRunSelection = await selectProbe(base, viewerAttempt);
+    assert.equal(previousRunSelection.status, 409);
+
+    await fetch(`${base}/app/settings`);
+    await fetch(`${base}/app/settings`);
+    const editorRun = await observed(base);
+    const [firstEditorAttempt, secondEditorAttempt] = editorRun.observations;
+    const staleSelection = await selectProbe(base, { ...firstEditorAttempt, at: 'stale' });
+    assert.equal(staleSelection.status, 409);
+    const fabricatedSelection = await selectProbe(base, { ...firstEditorAttempt, probeId: 'fabricated' });
+    assert.equal(fabricatedSelection.status, 409);
+    assert.deepEqual(await readSelectedAttempts(base), [viewerAttempt]);
+
+    await selectProbe(base, firstEditorAttempt);
+    assert.deepEqual(await readSelectedAttempts(base), [viewerAttempt, firstEditorAttempt]);
+    await selectProbe(base, secondEditorAttempt);
+    assert.deepEqual(await readSelectedAttempts(base), [viewerAttempt, secondEditorAttempt]);
+  });
+});
+
+test('selecting a failed attempt preserves its failure through reset', async () => {
+  await withServer(await tmp(), async (base) => {
+    await reset(base, 'viewer');
+    await fetch(`${base}/app/settings`);
+    const viewerRun = await observed(base);
+    const [failedAttempt] = viewerRun.observations;
+    await selectProbe(base, failedAttempt);
+    await reset(base, 'editor');
+    assert.deepEqual(failedAttempt.outcome, { kind: 'failed', reason: 'tool_error' });
+    assert.deepEqual(await readSelectedAttempts(base), [failedAttempt]);
+  }, { fault: 'settings' });
+});
