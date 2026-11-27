@@ -49,6 +49,9 @@ export function startDemoServer(
 ): Promise<Server> {
   const routes: Record<string, Route> = { ...ROUTES, '/media/example.mp4': [join(mediaDir, 'example.mp4'), 'video/mp4'] };
   let run: { id: string; role: FixtureRole; observations: Observation[] } | null = null;
+  // This single-scene demo keeps at most one creator-selected attempt per fixture role.
+  // Reset starts a new probe run; selected records live until replacement or server restart.
+  const selectedByRole = new Map<FixtureRole, Observation>();
   let runCount = 0;
   const api: Record<string, (url: URL, res: ServerResponse) => void> = {
     'POST /app/reset': (url, res) => {
@@ -74,6 +77,24 @@ export function startDemoServer(
       const status = body.allowed ? 200 : 403;
       obs.outcome = { kind: 'observed', response: { status, body } };
       json(res, status, body);
+    },
+    'GET /scene/selected-observations': (url, res) => {
+      json(res, 200, Array.from(selectedByRole.values()));
+    },
+    'POST /scene/selected-observations': (url, res) => {
+      // Resolve the selection against a server record. The timestamp also distinguishes
+      // a stale tab's probe from a reused run/probe number after a server restart.
+      const probeId = url.searchParams.get('probeId');
+      const recordedAt = url.searchParams.get('at');
+      const observation = run?.observations.find((attempt) =>
+        attempt.probeId === probeId && attempt.at === recordedAt
+      );
+      if (!observation?.outcome) {
+        return json(res, 409, { error: 'This attempt is no longer available. Reload the scene.' });
+      }
+      const role = observation.environment.actorRole;
+      selectedByRole.set(role, observation);
+      json(res, 200, Array.from(selectedByRole.values()));
     },
     'GET /scene/observations': (url, res) => {
       const packet: ObservationPacket = { run: run && { id: run.id, role: run.role }, observations: run?.observations ?? [] };
