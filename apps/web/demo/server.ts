@@ -8,6 +8,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FixtureRole, Observation, ObservationPacket, SettingsResponse } from './contracts.ts';
 
+import { prepareDemonstrationDecision, type DemonstrationDecisionRequest } from './decision.ts';
+import exampleScene from './fixtures/example-scene.json' with { type: 'json' };
+
 type Route = [file: string, type: string];
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 const ROUTES: Record<string, Route> = {
@@ -52,6 +55,8 @@ export function startDemoServer(
   // This single-scene demo keeps at most one creator-selected attempt per fixture role.
   // Reset starts a new probe run; selected records live until replacement or server restart.
   const selectedByRole = new Map<FixtureRole, Observation>();
+  // Only an explicit prepare replaces this scene's request. Restart clears it.
+  let preparedRequest: DemonstrationDecisionRequest | null = null;
   let runCount = 0;
   const api: Record<string, (url: URL, res: ServerResponse) => void> = {
     'POST /app/reset': (url, res) => {
@@ -77,6 +82,18 @@ export function startDemoServer(
       const status = body.allowed ? 200 : 403;
       obs.outcome = { kind: 'observed', response: { status, body } };
       json(res, status, body);
+    },
+    'GET /scene/demonstration-request': (url, res) => {
+      json(res, 200, preparedRequest);
+    },
+    'POST /scene/demonstration-request': (url, res) => {
+      const selectedAttempts = Array.from(selectedByRole.values());
+      const request = prepareDemonstrationDecision(selectedAttempts, exampleScene.goal);
+      if (!request) {
+        return json(res, 409, { error: 'Keep at least one attempt before preparing a request.' });
+      }
+      preparedRequest = request;
+      json(res, 200, request);
     },
     'GET /scene/selected-observations': (url, res) => {
       json(res, 200, Array.from(selectedByRole.values()));

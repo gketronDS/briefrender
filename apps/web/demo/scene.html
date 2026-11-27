@@ -7,6 +7,7 @@
   <style>
     body { font: 16px/1.5 system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
     main { display: grid; grid-template-columns: 3fr 2fr; gap: 1.5rem; align-items: start; }
+    #request-json { white-space: pre-wrap; overflow-wrap: anywhere; }
     video { width: 100%; background: #111; aspect-ratio: 16 / 9; }
     .tag { background: #fde68a; color: #422006; padding: .1rem .5rem; border-radius: .25rem; font-weight: 600; }
     [data-state="error"] { color: #b91c1c; font-weight: 600; }
@@ -42,6 +43,13 @@
     <ul id="selected" aria-live="polite"><li>Loading…</li></ul>
     <p id="selection-error" role="alert"></p>
     <a href="/scene/selected-observations">Inspect full selected records (JSON)</a>
+  </section>
+  <section aria-labelledby="request-heading">
+    <h2 id="request-heading">Demonstration request</h2>
+    <p>Prepare a request from the sample goal and your selected attempts. Model dispatch is pending.</p>
+    <button type="button" id="prepare-request" disabled>Prepare demonstration request</button>
+    <p id="request-status" role="status"></p>
+    <details><summary>Inspect last prepared request</summary><pre id="request-json"></pre></details>
   </section>
   <script type="module">
     const $ = (id) => document.getElementById(id);
@@ -133,6 +141,48 @@
       }
     }
 
+    const prepareButton = $('prepare-request');
+    const requestUrl = '/scene/demonstration-request';
+
+    function showPreparedRequest(request) {
+      const output = $('request-json');
+      if (!request) {
+        output.textContent = '';
+        $('request-status').textContent = 'No request prepared yet.';
+        return;
+      }
+      output.textContent = JSON.stringify(request, null, 2);
+      $('request-status').textContent = 'Request prepared. No model call has been made.';
+    }
+
+    async function loadPreparedRequest() {
+      try {
+        const response = await fetch(requestUrl);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const request = await response.json();
+        showPreparedRequest(request);
+      } catch {
+        $('request-status').textContent = 'Could not load the prepared request.';
+      }
+    }
+
+    async function prepareRequest() {
+      prepareButton.disabled = true;
+      try {
+        const response = await fetch(requestUrl, { method: 'POST' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        showPreparedRequest(result);
+      } catch (error) {
+        $('request-status').textContent = `Could not confirm request. ${error.message}`;
+      } finally {
+        prepareButton.disabled = false;
+      }
+    }
+
+    await loadPreparedRequest();
+    prepareButton.addEventListener('click', prepareRequest);
+    prepareButton.disabled = false;
     await loadSelection();
     await loadCurrentAttempts();
     const player = $('player');
