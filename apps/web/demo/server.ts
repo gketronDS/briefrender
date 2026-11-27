@@ -85,12 +85,15 @@ export function startDemoServer(
       // Resolve the selection against a server record. The timestamp also distinguishes
       // a stale tab's probe from a reused run/probe number after a server restart.
       const probeId = url.searchParams.get('probeId');
-      const at = url.searchParams.get('at');
-      const observation = run?.observations.find((item) => item.probeId === probeId && item.at === at);
+      const recordedAt = url.searchParams.get('at');
+      const observation = run?.observations.find((attempt) =>
+        attempt.probeId === probeId && attempt.at === recordedAt
+      );
       if (!observation?.outcome) {
         return json(res, 409, { error: 'This attempt is no longer available. Reload the scene.' });
       }
-      selectedByRole.set(observation.environment.actorRole, observation);
+      const role = observation.environment.actorRole;
+      selectedByRole.set(role, observation);
       json(res, 200, Array.from(selectedByRole.values()));
     },
     'GET /scene/observations': (url, res) => {
