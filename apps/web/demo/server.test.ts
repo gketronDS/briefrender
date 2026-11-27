@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -156,4 +157,47 @@ test('selecting a failed attempt preserves its failure through reset', async () 
     assert.deepEqual(failedAttempt.outcome, { kind: 'failed', reason: 'tool_error' });
     assert.deepEqual(await readSelectedAttempts(base), [failedAttempt]);
   }, { fault: 'settings' });
+});
+
+test('prepare freezes the selected evidence until the creator prepares again', async () => {
+  await withServer(await tmp(), async (base) => {
+    const url = `${base}/scene/demonstration-request`;
+    const prepare = () => fetch(url, { method: 'POST' });
+    const initial = await fetch(url);
+    assert.equal(await initial.json(), null);
+    await reset(base, 'viewer');
+    await fetch(`${base}/app/settings`);
+    const viewerRun = await observed(base);
+    const [viewer] = viewerRun.observations;
+    const missing = await prepare();
+    assert.equal(missing.status, 409);
+
+    await selectProbe(base, viewer);
+    const viewerResponse = await prepare();
+    assert.equal(viewerResponse.status, 200);
+    const viewerRequest = await viewerResponse.json();
+    const fixtureResponse = await fetch(`${base}/scene/example.json`);
+    const fixture = await fixtureResponse.json();
+    assert.equal(viewerRequest.assignment.goal, fixture.goal);
+    assert.equal(viewerRequest.expectedResult, 'demonstration_design');
+    const evidenceBytes = JSON.stringify([viewer]);
+    const evidenceHash = createHash('sha256').update(evidenceBytes).digest('hex');
+    assert.equal(viewerRequest.basis.evidence, `sha256:${evidenceHash}`);
+    assert.deepEqual(viewerRequest.assignment.observations, [viewer]);
+
+    await reset(base, 'editor');
+    await fetch(`${base}/app/settings`);
+    const editorRun = await observed(base);
+    const [editor] = editorRun.observations;
+    await selectProbe(base, editor);
+    const stored = await fetch(url);
+    assert.deepEqual(await stored.json(), viewerRequest);
+
+    const comparisonResponse = await prepare();
+    const comparison = await comparisonResponse.json();
+    assert.deepEqual(comparison.assignment.observations, [viewer, editor]);
+    assert.equal(comparison.basis.brief, viewerRequest.basis.brief);
+    assert.notEqual(comparison.basis.evidence, viewerRequest.basis.evidence);
+    assert.notEqual(comparison.id, viewerRequest.id);
+  });
 });
