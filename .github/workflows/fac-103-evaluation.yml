@@ -1,0 +1,76 @@
+name: FAC-103 evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Prepare a preview or collect an existing finished batch
+        type: choice
+        options: [preview, collect]
+        default: preview
+      preview_run:
+        description: Original preview run ID (collect only)
+        type: string
+      batch_id:
+        description: Anthropic Message Batch ID (collect only)
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  preview:
+    if: inputs.operation == 'preview' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Freeze the inputs for review
+        run: |
+          npm run --silent demo:batch-preview > preview.json
+          sha256sum preview.json >> "$GITHUB_STEP_SUMMARY"
+          jq '{trials:(.trials|length), model:.batch.requests[0].params.model, estimate}' preview.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fac-103-preview
+          path: preview.json
+          overwrite: false
+
+  collect:
+    if: inputs.operation == 'collect' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Check the preview came from this workflow on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_RUN: ${{ inputs.preview_run }}
+        run: |
+          [[ "$PREVIEW_RUN" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PREVIEW_RUN" > run.json
+          jq -e '.path == ".github/workflows/fac-103-evaluation.yml" and .head_branch == "main" and .event == "workflow_dispatch" and .conclusion == "success"' run.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: fac-103-preview
+          path: frozen
+          run-id: ${{ inputs.preview_run }}
+          github-token: ${{ github.token }}
+      - name: Collect finished results
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BATCH_ID: ${{ inputs.batch_id }}
+        run: node apps/web/demo/scorecard.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fac-103-scorecard
+          path: scorecard/
+          if-no-files-found: error
