@@ -67,3 +67,15 @@ test('relations connect distinct existing cases with unique IDs', () => {
   const duplicate = proposal({ ...design, cases: [viewerCase, viewerCase] });
   assert.equal(validateDemonstrationResult(request, duplicate).ok, false);
 });
+
+test('a comparison requires exactly two case IDs', () => {
+  const cases = [viewerCase, { ...viewerCase, id: 'other' }];
+  const comparison = {
+    kind: 'compare', sharedConditions: ['settings'], relevantDifference: 'role', relationshipToExplain: 'access',
+  };
+  for (const endpoints of [['viewer'], ['viewer', 'other'], ['viewer', 'other', 'viewer']]) {
+    const relations = [{ ...comparison, cases: endpoints }];
+    const candidate = proposal({ ...design, cases, relations });
+    assert.equal(validateDemonstrationResult(request, candidate).ok, endpoints.length === 2);
+  }
+});

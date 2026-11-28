@@ -6,6 +6,7 @@
     "node": ">=22.18"
   },
   "scripts": {
+    "demo:batch-preview": "node apps/web/demo/batch-preview.ts",
     "demo:sample": "node apps/web/demo/make-sample.ts",
     "demo:scene": "node apps/web/demo/server.ts",
     "test:demo": "node --test apps/web/demo/*.test.ts",
@@ -16,6 +17,7 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.14.0",
     "@langchain/anthropic": "1.6.4",
     "@langchain/core": "1.4.0",
     "zod": "4.6.7"

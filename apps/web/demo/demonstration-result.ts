@@ -17,7 +17,8 @@ const demonstrationCase = z.strictObject({
 
 const relation = z.discriminatedUnion('kind', [
   z.strictObject({
-    kind: z.literal('compare'), cases: z.tuple([id, id]),
+    // The batch schema converter supports homogeneous arrays; local validation enforces the pair.
+    kind: z.literal('compare'), cases: z.array(id).length(2),
     sharedConditions: z.array(text).max(5), relevantDifference: text, relationshipToExplain: text,
   }),
   z.strictObject({ kind: z.literal('boundary'), mainCase: id, boundaryCase: id, limitToExplain: text }),
@@ -49,7 +50,7 @@ type Validation =
   | { ok: true; result: z.infer<typeof demonstrationResultSchema> }
   | { ok: false; reason: string };
 
-function relatedCaseIds(link: z.infer<typeof relation>): [string, string] {
+function relatedCaseIds(link: z.infer<typeof relation>): string[] {
   switch (link.kind) {
     case 'compare': return link.cases;
     case 'boundary': return [link.mainCase, link.boundaryCase];
