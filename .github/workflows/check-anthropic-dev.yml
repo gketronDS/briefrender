@@ -1,0 +1,47 @@
+name: Check dev Anthropic access
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, codex/check-anthropic-dev]
+    paths: [.github/workflows/check-anthropic-dev.yml]
+
+permissions: {}
+
+jobs:
+  check-model:
+    runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 2
+    steps:
+      - name: Verify the configured FAC-103 model is accessible
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        shell: python
+        run: |
+          import http.client
+          import json
+          import os
+          import sys
+
+          key = os.environ.get("ANTHROPIC_API_KEY")
+          if not key:
+              sys.exit("ANTHROPIC_API_KEY is unavailable in the dev environment.")
+
+          # Model lookup authenticates the key without spending inference tokens.
+          model = "claude-opus-5-5"
+          client = http.client.HTTPSConnection("api.anthropic.com", timeout=20)
+          headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
+          try:
+              client.request("GET", f"/v1/models/{model}", headers=headers)
+              response = client.getresponse()
+          except (ValueError, OSError, http.client.HTTPException):
+              # A malformed header exception can contain its value.
+              sys.exit("Could not send an authenticated request to Anthropic.")
+          if response.status != 200:
+              sys.exit(f"Anthropic model lookup returned HTTP {response.status}.")
+
+          metadata = json.load(response)
+          if metadata.get("type") != "model" or not metadata.get("id"):
+              sys.exit("Anthropic returned an unexpected model metadata response.")
+          print(f"Authenticated model lookup succeeded for {metadata['id']}.")
